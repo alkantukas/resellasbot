@@ -1,0 +1,17 @@
+{
+  "name": "resell-zone-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Resell Zone Discord botas: pasveikinimai ir dovanų žaidimai (giveaways).",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node scripts/check.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0"
+  }
+}
