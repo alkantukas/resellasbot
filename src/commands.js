@@ -56,6 +56,9 @@ const giveaways = adminCommand('konkursas', 'Konkursai (giveaways)')
   .addSubcommand((s) => s.setName('atsaukti').setDescription('Atšaukti konkursą be laimėtojų').addStringOption(giveawayId))
   .addSubcommand((s) => s.setName('sarasas').setDescription('Aktyvių konkursų sąrašas'))
   .addSubcommand((s) =>
+    s.setName('zyma').setDescription('Ar dalyvauti gali tik užsidėję serverio žymą (Server Tag)')
+      .addBooleanOption((o) => o.setName('reikalauti').setDescription('True – tik su žyma, False – visi').setRequired(true)))
+  .addSubcommand((s) =>
     s.setName('bilietai').setDescription('Kanalas, kuriame laimėtojai kuria bilietą (rodomas laimėtojų pranešime)')
       .addChannelOption((o) =>
         o.setName('kanalas').setDescription('Bilietų kanalas. Palik tuščią, jei nori pašalinti').addChannelTypes(...TEXT_CHANNELS)));

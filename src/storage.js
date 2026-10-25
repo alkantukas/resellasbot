@@ -65,7 +65,8 @@ class Store {
   // --- Other per-server settings ----------------------------------------
 
   getGuildSettings(guildId) {
-    return { ticketChannelId: null, ...this.data.guilds[guildId]?.settings };
+    // requireTag: only members wearing this server's tag may join konkursai.
+    return { ticketChannelId: null, requireTag: true, ...this.data.guilds[guildId]?.settings };
   }
 
   updateGuildSettings(guildId, patch) {

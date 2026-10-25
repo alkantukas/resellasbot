@@ -1,8 +1,9 @@
 // Konkursai (giveaways): creation, live participant count, ending and winners.
 // Each prize is one winning place: prize 1 goes to the 1st winner, prize 2 to the 2nd, and so on.
 const crypto = require('node:crypto');
+const path = require('node:path');
 const {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, TextDisplayBuilder,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, TextDisplayBuilder, AttachmentBuilder,
   SeparatorBuilder, SeparatorSpacingSize, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { infoEmbed, successEmbed, errorEmbed, ephemeral, joinLimited } = require('./embeds');
@@ -15,6 +16,30 @@ const DRAFT_TTL_MS = 15 * MINUTE; // how long the prize form stays valid
 const MAX_PRIZES = 25;
 const UNKNOWN_CHANNEL = 10003;
 const UNKNOWN_MESSAGE = 10008;
+const MAX_TAG_LOOKUPS = 300; // when drawing, how many participants to check for the tag at most
+const TAG_TUTORIAL_IMAGE = path.join(__dirname, '..', 'assets', 'server-tag.png');
+
+/** Is the user showing this server's tag next to their name? */
+function hasServerTag(user, guildId) {
+  return user?.primaryGuild?.identityGuildId === guildId && user.primaryGuild.identityEnabled === true;
+}
+
+/** Private reply for people without the tag: how to put it on, with a screenshot. */
+function buildTagTutorial() {
+  return {
+    content: [
+      '## Norėdamas dalyvauti, užsidėk mūsų serverio žymą 🏷️',
+      'Laimėtojai bus renkami **tik iš tų, kurie tuo metu turės užsidėję mūsų žymą** ‼️',
+      '',
+      '**Kaip užsidėti:**',
+      '1. Viršuje kairėje paspausk ant serverio pavadinimo',
+      '2. Pasirink **Server Tag** ir užsidėk žymą',
+      '3. Grįžk čia ir dar kartą spausk **Dalyvauti** 🎟️',
+    ].join('\n'),
+    files: [new AttachmentBuilder(TAG_TUTORIAL_IMAGE, { name: 'server-tag.png' })],
+    flags: MessageFlags.Ephemeral,
+  };
+}
 
 /** One prize per line; "1.", "2)", "-" and similar list markers are removed. */
 function parsePrizes(raw) {
@@ -81,7 +106,7 @@ function buildGiveawayMessage(gw) {
   }
   container.addSeparatorComponents(separator())
     .addTextDisplayComponents(text(active
-      ? 'Paspausk **Dalyvauti**, jei nori dalyvauti šiame konkurse.'
+      ? `Paspausk **Dalyvauti**, jei nori dalyvauti šiame konkurse.${gw.requireTag ? '\n-# Dalyvauti ir laimėti gali tik turintys užsidėję mūsų serverio žymą.' : ''}`
       : gw.status === 'ended' ? 'Konkursas baigtas. Ačiū visiems dalyvavusiems!' : 'Šis konkursas atšauktas.'))
     .addSeparatorComponents(separator());
 
@@ -227,7 +252,7 @@ class Giveaways {
       if (!gw || gw.status !== 'active') return null;
       this.cancelUpdate(id);
 
-      gw.winners = pickRandom(gw.participants, gw.prizes.length); // winners[i] gets prizes[i]
+      gw.winners = await this.draw(gw, gw.participants, gw.prizes.length); // winners[i] gets prizes[i]
       gw.status = 'ended';
       gw.endedAt = Date.now();
       this.store.saveGiveaway(gw); // saved before announcing, so a crash can't pick twice
@@ -246,7 +271,7 @@ class Giveaways {
     const gw = this.store.getGiveaway(id);
     const places = place ? [place - 1] : allPlaces(gw);
     const excluded = new Set([...gw.winners, ...(gw.pastWinners ?? [])].filter(Boolean));
-    const picked = pickRandom(gw.participants.filter((p) => !excluded.has(p)), places.length);
+    const picked = await this.draw(gw, gw.participants.filter((p) => !excluded.has(p)), places.length);
     const changed = [];
     picked.forEach((userId, k) => {
       const i = places[k];
@@ -259,6 +284,22 @@ class Giveaways {
     await this.editMessage(gw).catch((e) => console.error(`[konkursai] edit failed for ${id}:`, e.message));
     await this.announce(gw, changed, { reroll: true, replyTo: gw.messageId });
     return changed;
+  }
+
+  /**
+   * Random winners from `pool`. When the konkursas requires the server tag, only people
+   * wearing it right now can win: candidates are checked in random order until enough are found.
+   */
+  async draw(gw, pool, count) {
+    if (!gw.requireTag) return pickRandom(pool, count);
+    const picked = [];
+    const candidates = pickRandom(pool, pool.length).slice(0, MAX_TAG_LOOKUPS);
+    for (const id of candidates) {
+      if (picked.length >= count) break;
+      const user = await this.client.users.fetch(id, { force: true }).catch(() => null);
+      if (hasServerTag(user, gw.guildId)) picked.push(id);
+    }
+    return picked;
   }
 
   async cancel(id) {
@@ -299,6 +340,9 @@ class Giveaways {
     const joined = gw.participants.includes(interaction.user.id);
 
     if (action === 'join') {
+      if (gw.requireTag && !hasServerTag(interaction.user, gw.guildId)) {
+        return interaction.reply(buildTagTutorial());
+      }
       if (joined) {
         const leave = new ButtonBuilder().setCustomId(`gw:leave:${id}`).setLabel('Pasitraukti').setStyle(ButtonStyle.Danger);
         return interaction.reply({
@@ -342,6 +386,13 @@ class Giveaways {
     const sub = interaction.options.getSubcommand();
     if (sub === 'sukurti') return this.create(interaction);
     if (sub === 'sarasas') return this.list(interaction);
+    if (sub === 'zyma') {
+      const requireTag = interaction.options.getBoolean('reikalauti', true);
+      this.store.updateGuildSettings(interaction.guildId, { requireTag });
+      return interaction.reply(ephemeral(requireTag
+        ? successEmbed('Serverio žyma privaloma', 'Nuo šiol naujuose konkursuose dalyvauti ir laimėti galės tik užsidėję mūsų serverio žymą.')
+        : successEmbed('Serverio žyma nebeprivaloma', 'Nuo šiol naujuose konkursuose gali dalyvauti visi.')));
+    }
     if (sub === 'bilietai') {
       const channel = interaction.options.getChannel('kanalas');
       this.store.updateGuildSettings(interaction.guildId, { ticketChannelId: channel?.id ?? null });
@@ -463,6 +514,7 @@ class Giveaways {
       participants: [],
       winners: [],
       status: 'active',
+      requireTag: this.store.getGuildSettings(interaction.guildId).requireTag,
       hostId: interaction.user.id,
       createdAt: Date.now(),
     };
@@ -486,4 +538,4 @@ class Giveaways {
   }
 }
 
-module.exports = { Giveaways, buildGiveawayMessage, buildAnnouncement, parsePrizes, pickRandom };
+module.exports = { Giveaways, buildGiveawayMessage, buildAnnouncement, buildTagTutorial, hasServerTag, parsePrizes, pickRandom };

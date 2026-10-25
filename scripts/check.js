@@ -67,11 +67,18 @@ function fakeWorld() {
       },
     },
   };
+  const untagged = new Set(); // users who took the server tag off
   const client = {
     channels: { fetch: async () => channel },
     guilds: { cache: new Map([['g1', guild]]) },
+    users: { fetch: async (id) => fakeUser(id, !untagged.has(id)) },
   };
-  return { sent, edits, guild, channel, client };
+  return { sent, edits, guild, channel, client, untagged };
+}
+
+// Users wear the g1 server tag unless their id starts with "notag".
+function fakeUser(id, tagged = !id.startsWith('notag')) {
+  return { id, primaryGuild: tagged ? { identityGuildId: 'g1', identityEnabled: true, tag: 'RSLT' } : null };
 }
 
 function fakeInteraction({ sub, options = {}, userId = 'host', customId, guild }) {
@@ -81,13 +88,14 @@ function fakeInteraction({ sub, options = {}, userId = 'host', customId, guild }
     customId,
     guildId: 'g1',
     guild,
-    user: { id: userId },
+    user: fakeUser(userId),
     member: { id: userId, displayName: 'Tester', user: { username: 'tester', displayAvatarURL: () => 'https://cdn.discordapp.com/embed/avatars/0.png' }, guild },
     options: {
       getSubcommand: () => sub,
       getString: (n) => options[n] ?? null,
       getInteger: (n) => options[n] ?? null,
       getChannel: (n) => options[n] ?? null,
+      getBoolean: (n) => options[n] ?? null,
       getFocused: () => '',
     },
     reply: async (p) => { replies.push(p); },
@@ -294,6 +302,37 @@ Laimėtojai, sukurkite 🎉 Giveaway bilietą čia: <#t1>`);
     gws.stop();
     assert.equal(gws.store.getGiveaway(gw.id).status, 'ended');
     assert.deepEqual(gws.store.getGiveaway(gw.id).winners, ['z']);
+  });
+
+  await test('giveaway: server tag needed to join, and to win', async () => {
+    const world = fakeWorld();
+    const gws = new Giveaways(world.client, new Store(file));
+    await createGiveaway(gws, world, { pavadinimas: 'Su žyma', kanalas: world.channel, trukme: '1h' }, 'A\nB');
+    assert.match(containerText(world.sent[0], 'tag post'), /tik turintys užsidėję mūsų serverio žymą/);
+    const [gw] = gws.active('g1');
+
+    const noTag = fakeInteraction({ customId: `gw:join:${gw.id}`, userId: 'notag1', guild: world.guild });
+    await gws.handleButton(noTag);
+    const tutorial = noTag.replies[0];
+    assert.match(tutorial.content, /serverio žymą/);
+    assert.equal(tutorial.files.length, 1);
+    assert.ok(fs.existsSync(tutorial.files[0].attachment), 'tutorial image file is missing');
+    assert.ok(tutorial.flags & MessageFlags.Ephemeral, 'tutorial must be private');
+    assert.deepEqual(gws.store.getGiveaway(gw.id).participants, []);
+
+    for (const u of ['x', 'y']) await gws.handleButton(fakeInteraction({ customId: `gw:join:${gw.id}`, userId: u, guild: world.guild }));
+    world.untagged.add('y'); // y removes the tag before the draw
+    const ended = await gws.end(gw.id);
+    gws.stop();
+    assert.deepEqual(ended.winners, ['x']);
+
+    // Turning the requirement off lets everyone join new konkursai.
+    await gws.handleCommand(fakeInteraction({ sub: 'zyma', options: { reikalauti: false }, guild: world.guild }));
+    await createGiveaway(gws, world, { pavadinimas: 'Visiems', kanalas: world.channel, trukme: '1h' }, 'C');
+    const [open] = gws.active('g1');
+    await gws.handleButton(fakeInteraction({ customId: `gw:join:${open.id}`, userId: 'notag2', guild: world.guild }));
+    gws.stop();
+    assert.deepEqual(gws.store.getGiveaway(open.id).participants, ['notag2']);
   });
 
   await test('giveaway: rejects zero or several end conditions with an embed', async () => {

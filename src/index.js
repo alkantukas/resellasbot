@@ -55,6 +55,7 @@ const help = () => infoEmbed('📖 Boto komandos').addFields(
       '`/konkursas perrinkti` – išrinkti naują laimėtoją (pvz. tik 2 vietai)',
       '`/konkursas atsaukti` – atšaukti be laimėtojų',
       '`/konkursas bilietai` – bilietų kanalas, rodomas laimėtojų pranešime',
+      '`/konkursas zyma` – ar dalyvauti gali tik užsidėję serverio žymą (numatyta: taip)',
     ].join('\n'),
   },
 );

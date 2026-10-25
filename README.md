@@ -177,6 +177,8 @@ If fewer people join than there are prizes, only the first places are given out.
 
 Dates are written out in Lithuanian (e.g. *2026 m. spalio 31 d., šeštadienis 23:59*), in the `TIMEZONE` from `.env`.
 
+**Server tag required:** by default, only members who wear your server's tag (Discord's *Server Tag* next to their name) can join. Anyone without it who clicks **Dalyvauti** gets a private message explaining how to put the tag on, with a screenshot (`assets/server-tag.png`; replace that file to change the picture). When winners are drawn, the bot checks again and skips anyone who has taken the tag off. Turn this off with `/konkursas zyma reikalauti:False` (and back on with `True`). The setting applies to konkursai created after the change. Your server needs a Server Tag set up (Server Settings → Server Tag) for this to make sense.
+
 **Ticket channel:** run `/konkursas bilietai kanalas:#bilietai` once. The winner box then ends with *Laimėtojai, sukurkite 🎉 Giveaway bilietą čia: #bilietai*. Run it without a channel to remove that line.
 
 Other commands (when you start typing the giveaway name, the bot suggests matches):
@@ -188,6 +190,7 @@ Other commands (when you start typing the giveaway name, the bot suggests matche
 | `/konkursas perrinkti` | Draw a new winner after it ended, e.g. if a winner doesn't respond. Use `vieta:2` to redraw only 2nd place (the new winner gets that place's prize); leave it empty to redraw every place. Previous winners are skipped |
 | `/konkursas atsaukti`  | Cancel a konkursas without winners                             |
 | `/konkursas bilietai`  | Set the ticket channel shown in the winner box                 |
+| `/konkursas zyma`      | Require the server tag to join and win (on by default)         |
 
 If someone deletes a giveaway post, the giveaway is cancelled automatically.
 
